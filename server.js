@@ -101,11 +101,54 @@ app.get('/api/web/current', async (req, res) => {
     }
 });
 
-app.post('/api/web/command', (req, res) => {
-    const { cmd } = req.body;
-    console.log("📤 Web gửi lệnh:", cmd);
-    client.publish('tuoicay/cmd', cmd);
-    res.json({ status: "Sent via MQTT" });
+// API Báo cáo (ĐÃ FIX LỖI MÚI GIỜ VIỆT NAM UTC+7)
+app.get('/api/report/stats', async (req, res) => {
+    try {
+        let dateStr = req.query.date;
+        
+        // Nếu không gửi ngày lên, mặc định lấy ngày hiện tại ở VN
+        if (!dateStr) {
+            const now = new Date();
+            // Hack nhẹ để lấy ngày giờ VN: cộng 7 tiếng
+            const vnTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+            dateStr = vnTime.toISOString().split('T')[0];
+        }
+
+        // --- KHÚC QUAN TRỌNG: ÉP MÚI GIỜ +07:00 ---
+        // Bắt đầu: 00:00:00 ngày hôm đó tại VN
+        const startDate = new Date(`${dateStr}T00:00:00+07:00`);
+        
+        // Kết thúc: 00:00:00 ngày hôm sau tại VN
+        const endDate = new Date(startDate);
+        endDate.setDate(endDate.getDate() + 1);
+
+        console.log(`Xem báo cáo từ: ${startDate.toISOString()} đến ${endDate.toISOString()}`);
+
+        const pumpCount = await DeviceData.countDocuments({ 
+            timestamp: { $gte: startDate, $lt: endDate }, 
+            pumpState: 1 
+        });
+
+        const avgHumData = await DeviceData.aggregate([
+            { $match: { timestamp: { $gte: startDate, $lt: endDate } } },
+            { $group: { _id: null, avgHum: { $avg: "$humidity" } } }
+        ]);
+        const avgHum = avgHumData.length > 0 ? Math.round(avgHumData[0].avgHum) : 0;
+        
+        const chartData = await DeviceData.find({ 
+            timestamp: { $gte: startDate, $lt: endDate } 
+        }).sort({ timestamp: 1 });
+
+        res.json({ 
+            date: dateStr, // Trả về đúng ngày người dùng chọn
+            pumpCount, 
+            avgHumidity: avgHum, 
+            chartData 
+        });
+    } catch (e) { 
+        console.log(e);
+        res.status(500).json({ error: "Lỗi báo cáo" }); 
+    }
 });
 
 app.post('/api/login', async (req, res) => {
@@ -133,4 +176,5 @@ app.get('/api/report/stats', async (req, res) => {
 
 // --- 6. CHẠY SERVER (SỬA PORT CHO CLOUD) ---
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => console.log(`Server đang chạy tại port ${PORT}`));
