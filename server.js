@@ -64,47 +64,53 @@ let smartConfig = {
 };
 
 // === [MỚI] HÀM PHÂN TÍCH DỮ LIỆU QUÁ KHỨ ===
+// === HÀM PHÂN TÍCH DỮ LIỆU LỚN (Thay thế hàm cũ trong server.js) ===
 async function analyzeHistory() {
-    console.log("🧠 [AI] Đang phân tích dữ liệu hôm qua...");
+    console.log("🧠 [AI] Đang phân tích xu hướng 7 ngày qua...");
     
-    // Lấy mốc thời gian ngày hôm qua
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
+    // Mốc thời gian: 7 ngày trước
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     
-    // Tính trung bình độ ẩm của ngày hôm qua
+    // Tính trung bình độ ẩm của 7 ngày qua (Trend Analysis)
     const stats = await DeviceData.aggregate([
-        { $match: { timestamp: { $gte: yesterday } } },
-        { $group: { _id: null, avgHum: { $avg: "$humidity" } } }
+        { $match: { timestamp: { $gte: sevenDaysAgo } } },
+        { 
+            $group: { 
+                _id: null, 
+                avgHum: { $avg: "$humidity" },
+                totalPump: { $sum: "$pumpState" } // Đếm tổng số lần bơm
+            } 
+        }
     ]);
 
     if (stats.length > 0) {
         const avgHum = Math.round(stats[0].avgHum);
-        console.log(`📊 [AI] Độ ẩm TB hôm qua: ${avgHum}`);
+        const pumpCount = stats[0].totalPump;
 
-        // --- LOGIC TRÍ TUỆ NHÂN TẠO ---
-        // Giả sử: Giá trị càng CAO là càng KHÔ (Raw 0-1024)
+        console.log(`📊 [AI REPORT] 7 Ngày qua: Ẩm TB=${avgHum}, Bơm=${pumpCount} lần`);
+
+        // --- LOGIC QUYẾT ĐỊNH DỰA TRÊN DỮ LIỆU TUẦN ---
         
-        // Trường hợp 1: Hôm qua trung bình rất cao (> 700) => Trời nắng nóng/Khô hạn
-        // -> Hành động: Cần tưới sớm hơn để giữ ẩm -> GIẢM ngưỡng kích hoạt xuống
-        if (avgHum > 700) {
-            smartConfig.threshold = 500; // Tưới khi vừa mới hơi khô (giữ đất luôn ẩm)
-            smartConfig.status = `🔥 Trời nóng (TB:${avgHum}) -> Tăng cường tưới (Ngưỡng: 500)`;
+        // 1. Nếu trung bình tuần < 450 (Đợt nắng nóng kéo dài)
+        if (avgHum < 450) {
+            smartConfig.threshold = 700; 
+            smartConfig.status = `🔥 Đợt nắng nóng kéo dài (TB tuần:${avgHum}) -> Tăng ngưỡng lên 700`;
         } 
-        // Trường hợp 2: Hôm qua trung bình thấp (< 400) => Trời mưa/Nồm ẩm
-        // -> Hành động: Tiết kiệm nước -> TĂNG ngưỡng kích hoạt lên
-        else if (avgHum < 400) {
-            smartConfig.threshold = 800; // Chỉ tưới khi đất thật sự khô
-            smartConfig.status = `🌧️ Trời ẩm (TB:${avgHum}) -> Giảm tưới (Ngưỡng: 800)`;
+        // 2. Nếu trung bình tuần > 750 (Mùa mưa/Nồm)
+        else if (avgHum > 750) {
+            smartConfig.threshold = 900; // Hầu như không cần tưới
+            smartConfig.status = `🌧️ Mùa mưa ẩm (TB tuần:${avgHum}) -> Giảm tưới tối đa`;
         } 
-        // Trường hợp 3: Bình thường
+        // 3. Bình thường
         else {
             smartConfig.threshold = 600;
-            smartConfig.status = `✅ Thời tiết ổn định (TB:${avgHum}) -> Ngưỡng chuẩn: 600`;
+            smartConfig.status = `✅ Thời tiết ổn định (TB tuần:${avgHum})`;
         }
         smartConfig.lastRun = new Date();
     } else {
-        console.log("⚠️ [AI] Không có dữ liệu hôm qua để phân tích.");
-        smartConfig.status = "Thiếu dữ liệu (Chạy file seed.js để tạo giả)";
+        console.log("⚠️ [AI] Chưa đủ dữ liệu 7 ngày để phân tích.");
+        smartConfig.status = "Đang thu thập dữ liệu...";
     }
 }
 
