@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Garden Pro</title>
+    <title>Smart Garden AI Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         /* CSS Giữ nguyên */
@@ -30,6 +30,11 @@
         .btn { padding: 12px 25px; margin-right: 10px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; transition: 0.2s; }
         .btn:disabled { background-color: #ccc !important; cursor: not-allowed; }
         .btn-on { background: #00b894; } .btn-off { background: #d63031; } .btn-auto { background: #0984e3; } .btn-manual { background: #e17055; }
+        
+        /* Style riêng cho thẻ AI */
+        .card-ai { border: 2px solid #6c5ce7; background: #f8f9fe; }
+        .ai-status-text { font-size: 14px; color: #6c5ce7; font-style: italic; margin-top: 5px; display: block;}
+        
         .config-form { max-width: 400px; background: white; padding: 30px; border-radius: 10px; }
         .date-picker { padding: 10px; border-radius: 5px; border: 1px solid #ccc; margin-bottom: 20px; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -76,12 +81,18 @@
                         <span class="label">CHẾ ĐỘ</span>
                         <div class="value" id="mode-status" style="color: #0984e3;">--</div>
                     </div>
+                    <div class="card card-ai">
+                        <span class="label" style="color: #6c5ce7; font-weight: bold;">TRÍ TUỆ NHÂN TẠO (AI)</span>
+                        <div class="value" style="font-size: 24px; color: #6c5ce7;" id="ai-threshold">Ngưỡng: --</div>
+                        <span id="ai-status" class="ai-status-text">Đang phân tích...</span>
+                        <button class="btn" style="background: #6c5ce7; font-size: 11px; padding: 5px 10px; margin-top:8px;" onclick="checkAI()">Kiểm tra AI</button>
+                    </div>
                 </div>
 
                 <div class="control-panel" id="admin-controls">
                     <h3>🕹️ Bảng Điều Khiển</h3>
                     <p>Chế độ:</p>
-                    <button class="btn btn-auto" onclick="sendCommand('SET_MODE_AUTO')">AUTO</button>
+                    <button class="btn btn-auto" onclick="sendCommand('SET_MODE_AUTO')">AUTO (AI)</button>
                     <button class="btn btn-manual" onclick="sendCommand('SET_MODE_MANUAL')">MANUAL</button>
                     <button class="btn btn-off" onclick="sendCommand('SET_MODE_OFF')">OFF (DỪNG)</button>
                     <hr>
@@ -132,10 +143,11 @@
     </div>
 
     <script>
-        const IP = ""; 
+        const IP = ""; // Tự động lấy host hiện tại
         let currentUser = null;
         let chartInstance = null;
 
+        // Cấu hình cảm biến (Sửa lại cho đúng thực tế của bạn)
         const SENSOR_DRY = 1024; 
         const SENSOR_WET = 400;  
 
@@ -192,14 +204,32 @@
                 document.getElementById("hum-raw").innerText = "(Raw: " + data.humidity + ")";
                 document.getElementById("pump-status").innerText = data.pumpState == 1 ? "ĐANG BẬT" : "ĐANG TẮT";
                 let mStt = "OFF";
-                if(data.mode == 1) mStt = "AUTO";
+                if(data.mode == 1) mStt = "AUTO (AI)";
                 if(data.mode == 2) mStt = "MANUAL";
                 document.getElementById("mode-status").innerText = mStt;
             } catch(e) {}
         }
 
+        // [MỚI] Hàm kiểm tra AI
+        async function checkAI() {
+            try {
+                document.getElementById('ai-status').innerText = "Đang kết nối Server...";
+                // Gọi API Test-smart để lấy kết quả phân tích
+                let res = await fetch(IP + "/api/test-smart");
+                let data = await res.json();
+                // Data trả về: { message: "...", config: { threshold: 600, status: "..." } }
+                
+                document.getElementById('ai-threshold').innerText = "Ngưỡng: " + data.config.threshold;
+                document.getElementById('ai-status').innerText = data.config.status;
+            } catch(e) {
+                console.log(e);
+                document.getElementById('ai-status').innerText = "Lỗi kết nối AI";
+            }
+        }
+
         function startDashboard() {
             updateDashboard();
+            checkAI(); // Gọi AI 1 lần khi mới vào
             setInterval(updateDashboard, 2000);
         }
 
@@ -212,7 +242,6 @@
             alert("Đã gửi: " + cmd);
         }
 
-        // --- ĐÃ SỬA PHẦN NÀY ĐỂ TRỤC Y LUÔN LÀ 0-100 ---
         async function loadReport() {
             try {
                 const dateVal = document.getElementById('report-date').value;
@@ -242,12 +271,9 @@
                         responsive: true,
                         scales: {
                             y: {
-                                beginAtZero: true, // Bắt đầu từ 0
-                                max: 100,          // Kết thúc ở 100
-                                title: {
-                                    display: true,
-                                    text: 'Độ ẩm (%)'
-                                }
+                                beginAtZero: true, 
+                                max: 100,          
+                                title: { display: true, text: 'Độ ẩm (%)' }
                             }
                         }
                     }
@@ -264,5 +290,4 @@
         }
     </script>
 </body>
-
 </html>
