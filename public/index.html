@@ -106,9 +106,18 @@
             <div id="report" class="section">
                 <h3>Thống kê lịch sử</h3>
                 
-                <label>Chọn ngày xem: </label>
-                <input type="date" id="report-date" class="date-picker" onchange="loadReport()">
-                <button class="btn btn-manual" style="padding: 10px;" onclick="loadReport()">Xem</button>
+                <div style="display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;">
+                    <div>
+                        <label class="label">Từ ngày:</label>
+                        <input type="date" id="date-start" class="date-picker" style="margin-bottom: 0;">
+                    </div>
+                    <div>
+                        <label class="label">Đến ngày:</label>
+                        <input type="date" id="date-end" class="date-picker" style="margin-bottom: 0;">
+                    </div>
+                    <button class="btn btn-manual" style="padding: 10px 20px; height: 42px;" onclick="loadReport()">XEM BÁO CÁO</button>
+                </div>
+                <br>
 
                 <div class="dashboard-grid">
                     <div class="card">
@@ -124,7 +133,7 @@
                 </div>
                 <br>
                 <div class="card" style="width: 100%;">
-                    <h3>Biểu đồ độ ẩm (Theo thời gian)</h3>
+                    <h3>Biểu đồ độ ẩm</h3>
                     <canvas id="myChart"></canvas>
                 </div>
             </div>
@@ -291,3 +300,4 @@
     </script>
 </body>
 </html>
+
