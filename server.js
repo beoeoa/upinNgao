@@ -209,41 +209,54 @@ app.get('/api/test-smart', async (req, res) => {
     });
 });
 
+// [CẬP NHẬT] API Báo cáo theo khoảng thời gian
 app.get('/api/report/stats', async (req, res) => {
     try {
-        let dateStr = req.query.date;
-        if (!dateStr) {
+        let { start, end } = req.query;
+        
+        // 1. Xác định thời gian bắt đầu và kết thúc
+        let startDate, endDate;
+
+        if (!start || !end) {
+            // Nếu không gửi ngày lên, mặc định lấy ngày hiện tại (VN)
             const now = new Date();
             const vnTime = new Date(now.getTime() + 7 * 60 * 60 * 1000);
-            dateStr = vnTime.toISOString().split('T')[0];
+            const todayStr = vnTime.toISOString().split('T')[0];
+            startDate = new Date(`${todayStr}T00:00:00+07:00`);
+            endDate = new Date(`${todayStr}T23:59:59+07:00`);
+        } else {
+            // Nếu có gửi ngày: Từ 00:00 ngày start -> 23:59 ngày end
+            startDate = new Date(`${start}T00:00:00+07:00`);
+            endDate = new Date(`${end}T23:59:59+07:00`);
         }
 
-        const startDate = new Date(`${dateStr}T00:00:00+07:00`);
-        const endDate = new Date(startDate);
-        endDate.setDate(endDate.getDate() + 1);
+        console.log(`📊 Report từ: ${startDate.toISOString()} đến ${endDate.toISOString()}`);
+
+        // 2. Truy vấn Database theo khoảng thời gian
+        const query = { timestamp: { $gte: startDate, $lte: endDate } };
 
         const pumpCount = await DeviceData.countDocuments({ 
-            timestamp: { $gte: startDate, $lt: endDate }, 
+            ...query, 
             pumpState: 1 
         });
 
         const avgHumData = await DeviceData.aggregate([
-            { $match: { timestamp: { $gte: startDate, $lt: endDate } } },
+            { $match: query },
             { $group: { _id: null, avgHum: { $avg: "$humidity" } } }
         ]);
         const avgHum = avgHumData.length > 0 ? Math.round(avgHumData[0].avgHum) : 0;
         
-        const chartData = await DeviceData.find({ 
-            timestamp: { $gte: startDate, $lt: endDate } 
-        }).sort({ timestamp: 1 });
+        const chartData = await DeviceData.find(query).sort({ timestamp: 1 });
 
         res.json({ 
-            date: dateStr, 
+            start: start || startDate.toISOString().split('T')[0],
+            end: end || endDate.toISOString().split('T')[0],
             pumpCount, 
             avgHumidity: avgHum, 
             chartData 
         });
     } catch (e) { 
+        console.log(e);
         res.status(500).json({ error: "Lỗi báo cáo" }); 
     }
 });
@@ -251,3 +264,4 @@ app.get('/api/report/stats', async (req, res) => {
 // --- 6. CHẠY SERVER ---
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server Smart đang chạy tại port ${PORT}`));
+
