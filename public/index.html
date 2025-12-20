@@ -133,7 +133,7 @@
                 </div>
                 <br>
                 <div class="card" style="width: 100%;">
-                    <h3>Biểu đồ độ ẩm</h3>
+                    <h3>Biểu đồ độ ẩm (Theo thời gian)</h3>
                     <canvas id="myChart"></canvas>
                 </div>
             </div>
@@ -156,7 +156,7 @@
         let currentUser = null;
         let chartInstance = null;
 
-        // Cấu hình cảm biến (Sửa lại cho đúng thực tế của bạn)
+        // Cấu hình cảm biến
         const SENSOR_DRY = 1024; 
         const SENSOR_WET = 400;  
 
@@ -187,7 +187,11 @@
                         document.getElementById('guest-msg').style.display = 'block';
                     }
                     
-                    document.getElementById('report-date').valueAsDate = new Date();
+                    // [ĐÃ SỬA] Set mặc định 2 ô input là ngày hôm nay
+                    const today = new Date().toISOString().split('T')[0];
+                    document.getElementById('date-start').value = today;
+                    document.getElementById('date-end').value = today;
+
                     startDashboard();
                 } else {
                     document.getElementById('login-msg').innerText = data.message;
@@ -202,7 +206,7 @@
             document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
             document.getElementById(id).classList.add('active');
             event.target.classList.add('active');
-            if (id === 'report') loadReport();
+            if (id === 'report') loadReport(); // Gọi mặc định xem hôm nay
         }
 
         async function updateDashboard() {
@@ -219,15 +223,11 @@
             } catch(e) {}
         }
 
-        // [MỚI] Hàm kiểm tra AI
         async function checkAI() {
             try {
                 document.getElementById('ai-status').innerText = "Đang kết nối Server...";
-                // Gọi API Test-smart để lấy kết quả phân tích
                 let res = await fetch(IP + "/api/test-smart");
                 let data = await res.json();
-                // Data trả về: { message: "...", config: { threshold: 600, status: "..." } }
-                
                 document.getElementById('ai-threshold').innerText = "Ngưỡng: " + data.config.threshold;
                 document.getElementById('ai-status').innerText = data.config.status;
             } catch(e) {
@@ -238,7 +238,7 @@
 
         function startDashboard() {
             updateDashboard();
-            checkAI(); // Gọi AI 1 lần khi mới vào
+            checkAI(); 
             setInterval(updateDashboard, 2000);
         }
 
@@ -251,10 +251,17 @@
             alert("Đã gửi: " + cmd);
         }
 
+        // [ĐÃ SỬA] Hàm tải báo cáo theo khoảng thời gian
         async function loadReport() {
             try {
-                const dateVal = document.getElementById('report-date').value;
-                let res = await fetch(IP + `/api/report/stats?date=${dateVal}`);
+                const dStart = document.getElementById('date-start').value;
+                const dEnd = document.getElementById('date-end').value;
+                
+                if(!dStart || !dEnd) return alert("Vui lòng chọn đầy đủ ngày!");
+                if(new Date(dStart) > new Date(dEnd)) return alert("Ngày bắt đầu không được lớn hơn ngày kết thúc!");
+
+                // Gọi API với start và end
+                let res = await fetch(IP + `/api/report/stats?start=${dStart}&end=${dEnd}`);
                 let data = await res.json();
 
                 document.getElementById('rep-pump').innerText = data.pumpCount;
@@ -266,18 +273,27 @@
                 chartInstance = new Chart(ctx, {
                     type: 'line',
                     data: {
-                        labels: data.chartData.map(d => new Date(d.timestamp).toLocaleTimeString()),
+                        // Hiển thị cả ngày và giờ
+                        labels: data.chartData.map(d => {
+                            const date = new Date(d.timestamp);
+                            return `${date.getDate()}/${date.getMonth()+1} ${date.toLocaleTimeString()}`;
+                        }),
                         datasets: [{
                             label: 'Độ ẩm (%)',
                             data: data.chartData.map(d => convertHum(d.humidity)),
                             borderColor: '#00b894',
                             backgroundColor: 'rgba(0, 184, 148, 0.1)',
                             fill: true,
-                            tension: 0.3
+                            tension: 0.3,
+                            pointRadius: 2
                         }]
                     },
                     options: {
                         responsive: true,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false,
+                        },
                         scales: {
                             y: {
                                 beginAtZero: true, 
@@ -287,7 +303,7 @@
                         }
                     }
                 });
-            } catch(e) { console.log(e); }
+            } catch(e) { console.log(e); alert("Lỗi tải báo cáo"); }
         }
 
         function saveConfig() {
@@ -300,4 +316,3 @@
     </script>
 </body>
 </html>
-
