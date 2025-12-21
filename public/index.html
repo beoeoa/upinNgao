@@ -31,13 +31,19 @@
         .btn:disabled { background-color: #ccc !important; cursor: not-allowed; }
         .btn-on { background: #00b894; } .btn-off { background: #d63031; } .btn-auto { background: #0984e3; } .btn-manual { background: #e17055; }
         
-        /* Style riêng cho thẻ AI */
         .card-ai { border: 2px solid #6c5ce7; background: #f8f9fe; }
         .ai-status-text { font-size: 14px; color: #6c5ce7; font-style: italic; margin-top: 5px; display: block;}
         
         .config-form { max-width: 400px; background: white; padding: 30px; border-radius: 10px; }
         .date-picker { padding: 10px; border-radius: 5px; border: 1px solid #ccc; margin-bottom: 20px; }
+        
+        /* [MỚI] CSS cho cảnh báo và lịch trình */
+        #wifi-alert { display: none; background: #e74c3c; color: white; padding: 15px; margin-bottom: 20px; border-radius: 5px; text-align: center; font-weight: bold; animation: blink 2s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        
+        .scheduler-box { margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px; }
+        .time-input { padding: 8px; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; }
     </style>
 </head>
 <body>
@@ -64,6 +70,9 @@
         <div class="content">
             <h2 id="page-title">Dashboard</h2>
             <p>Xin chào, <span id="user-role" style="font-weight: bold;">--</span></p>
+            
+            <div id="wifi-alert">⚠️ CẢNH BÁO: Mất kết nối với thiết bị! Dữ liệu có thể không chính xác.</div>
+            
             <hr style="border: 0; border-top: 1px solid #ddd; margin-bottom: 20px;">
 
             <div id="dashboard" class="section active">
@@ -99,6 +108,16 @@
                     <p>Bơm (Chế độ Manual):</p>
                     <button class="btn btn-on" onclick="sendCommand('PUMP_ON')">Bật Bơm</button>
                     <button class="btn btn-off" style="background:#e74c3c" onclick="sendCommand('PUMP_OFF')">Tắt Bơm</button>
+                    
+                    <div class="scheduler-box">
+                        <p>⏰ <b>Hẹn giờ tưới (Hàng ngày):</b></p>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="time" id="schedule-time" class="time-input">
+                            <button class="btn btn-auto" style="margin:0" onclick="saveSchedule()">Lưu Lịch</button>
+                            <button class="btn btn-off" style="margin:0; background: #95a5a6;" onclick="clearSchedule()">Xóa</button>
+                        </div>
+                        <p id="schedule-display" style="color: #636e72; font-size: 13px; margin-top: 5px;">Chưa có lịch hẹn.</p>
+                    </div>
                 </div>
                 <div id="guest-msg" style="display:none; color: red; margin-top:20px;">Bạn là User, chỉ được xem thông tin.</div>
             </div>
@@ -160,6 +179,10 @@
         const SENSOR_DRY = 1024; 
         const SENSOR_WET = 400;  
 
+        // [MỚI] Biến lưu thời gian hẹn giờ
+        let scheduledTime = localStorage.getItem('smartGardenSchedule') || null;
+        let isScheduleTriggered = false; // Cờ để tránh gửi lệnh liên tục trong cùng 1 phút
+
         function convertHum(rawVal) {
             let percent = ((SENSOR_DRY - rawVal) / (SENSOR_DRY - SENSOR_WET)) * 100;
             if (percent < 0) percent = 0;
@@ -187,12 +210,12 @@
                         document.getElementById('guest-msg').style.display = 'block';
                     }
                     
-                    // [ĐÃ SỬA] Set mặc định 2 ô input là ngày hôm nay
                     const today = new Date().toISOString().split('T')[0];
                     document.getElementById('date-start').value = today;
                     document.getElementById('date-end').value = today;
 
                     startDashboard();
+                    updateScheduleUI(); // Hiển thị lịch đã lưu
                 } else {
                     document.getElementById('login-msg').innerText = data.message;
                 }
@@ -206,13 +229,32 @@
             document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
             document.getElementById(id).classList.add('active');
             event.target.classList.add('active');
-            if (id === 'report') loadReport(); // Gọi mặc định xem hôm nay
+            if (id === 'report') loadReport(); 
         }
 
         async function updateDashboard() {
             try {
                 let res = await fetch(IP + "/api/web/current");
                 let data = await res.json();
+                
+                // --- [MỚI] KIỂM TRA MẤT KẾT NỐI WIFI ---
+                // Giả sử server trả về timestamp, hoặc nếu không có ta dùng thời gian hiện tại
+                // Logic: Nếu data.timestamp cũ quá 60s so với hiện tại -> Mất kết nối
+                if (data.timestamp) {
+                    const lastUpdate = new Date(data.timestamp);
+                    const now = new Date();
+                    const diffSeconds = (now - lastUpdate) / 1000;
+                    
+                    const alertBox = document.getElementById('wifi-alert');
+                    if (diffSeconds > 60) { // Quá 60 giây không có dữ liệu
+                        alertBox.style.display = 'block';
+                        alertBox.innerText = `⚠️ CẢNH BÁO: Mất kết nối! Dữ liệu cập nhật lần cuối lúc ${lastUpdate.toLocaleTimeString()}`;
+                    } else {
+                        alertBox.style.display = 'none';
+                    }
+                }
+                // ----------------------------------------
+
                 document.getElementById("hum").innerText = convertHum(data.humidity);
                 document.getElementById("hum-raw").innerText = "(Raw: " + data.humidity + ")";
                 document.getElementById("pump-status").innerText = data.pumpState == 1 ? "ĐANG BẬT" : "ĐANG TẮT";
@@ -236,10 +278,67 @@
             }
         }
 
+        // [MỚI] Hàm kiểm tra lịch trình (Chạy mỗi giây)
+        function checkScheduleLoop() {
+            if (!scheduledTime) return; // Không có lịch thì thôi
+
+            const now = new Date();
+            const currentHM = now.toTimeString().substring(0, 5); // Lấy HH:MM
+
+            if (currentHM === scheduledTime) {
+                if (!isScheduleTriggered) {
+                    // Đến giờ hẹn và chưa gửi lệnh
+                    sendCommand('PUMP_ON'); 
+                    console.log("⏰ Đã kích hoạt lịch tưới lúc " + currentHM);
+                    alert("⏰ Đã đến giờ hẹn! Hệ thống đang bật bơm.");
+                    isScheduleTriggered = true; // Đánh dấu đã chạy để không spam lệnh
+                }
+            } else {
+                isScheduleTriggered = false; // Reset khi qua phút khác
+            }
+        }
+
+        // [MỚI] Lưu lịch
+        function saveSchedule() {
+            const timeVal = document.getElementById('schedule-time').value;
+            if (!timeVal) return alert("Vui lòng chọn giờ!");
+            
+            scheduledTime = timeVal;
+            localStorage.setItem('smartGardenSchedule', scheduledTime); // Lưu vào bộ nhớ trình duyệt
+            updateScheduleUI();
+            alert("Đã lưu lịch tưới lúc: " + scheduledTime);
+        }
+
+        // [MỚI] Xóa lịch
+        function clearSchedule() {
+            scheduledTime = null;
+            localStorage.removeItem('smartGardenSchedule');
+            updateScheduleUI();
+            alert("Đã xóa lịch tưới.");
+        }
+
+        function updateScheduleUI() {
+            const display = document.getElementById('schedule-display');
+            const input = document.getElementById('schedule-time');
+            if (scheduledTime) {
+                display.innerHTML = `Đang hẹn tưới lúc: <b style="color:#00b894">${scheduledTime}</b> hàng ngày.`;
+                display.style.color = "#2d3436";
+                input.value = scheduledTime;
+            } else {
+                display.innerText = "Chưa có lịch hẹn.";
+                display.style.color = "#636e72";
+                input.value = "";
+            }
+        }
+
         function startDashboard() {
             updateDashboard();
             checkAI(); 
-            setInterval(updateDashboard, 2000);
+            // Loop cập nhật dashboard và kiểm tra lịch
+            setInterval(() => {
+                updateDashboard();
+                checkScheduleLoop(); // Kiểm tra giờ hẹn
+            }, 2000);
         }
 
         async function sendCommand(cmd) {
@@ -248,10 +347,10 @@
                 method: "POST", headers: {"Content-Type":"application/json"},
                 body: JSON.stringify({cmd: cmd})
             });
-            alert("Đã gửi: " + cmd);
+            // Không alert mỗi lần gửi lệnh tự động, chỉ log
+            console.log("Đã gửi: " + cmd);
         }
 
-        // [ĐÃ SỬA] Hàm tải báo cáo theo khoảng thời gian
         async function loadReport() {
             try {
                 const dStart = document.getElementById('date-start').value;
@@ -260,7 +359,6 @@
                 if(!dStart || !dEnd) return alert("Vui lòng chọn đầy đủ ngày!");
                 if(new Date(dStart) > new Date(dEnd)) return alert("Ngày bắt đầu không được lớn hơn ngày kết thúc!");
 
-                // Gọi API với start và end
                 let res = await fetch(IP + `/api/report/stats?start=${dStart}&end=${dEnd}`);
                 let data = await res.json();
 
@@ -273,7 +371,6 @@
                 chartInstance = new Chart(ctx, {
                     type: 'line',
                     data: {
-                        // Hiển thị cả ngày và giờ
                         labels: data.chartData.map(d => {
                             const date = new Date(d.timestamp);
                             return `${date.getDate()}/${date.getMonth()+1} ${date.toLocaleTimeString()}`;
